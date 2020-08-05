@@ -93,3 +93,74 @@ housing_num = housing.drop('ocean_proximity', axis=1)
 imputer.fit(housing_num)
 X = imputer.transform(housing_num)
 housing_tr = pd.DataFrame(X, columns=housing_num.columns)
+
+# handling  text and categorical attributes
+housing_cat = housing[["ocean_proximity"]]
+print(housing_cat)
+
+# convert categories from text to numbers
+# from sklearn.preprocessing import OrdinalEncoder
+# ordinal_encoder = OrdinalEncoder()
+# housing_cat_encoded =  ordinal_encoder.fit_transform(housing_cat)
+
+from sklearn.preprocessing import OneHotEncoder
+
+cat_encoder = OneHotEncoder()
+housing_cat_1hot = cat_encoder.fit_transform(housing_cat)
+print(cat_encoder.categories_)
+
+# create custom transformation to add the three new columns
+from sklearn.base import BaseEstimator, TransformerMixin
+
+rooms_ix, bedrooms_ix, population_ix, households_ix = 3, 4, 5, 6
+
+
+class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
+    def __init__(self, add_bedrooms_per_room=True):  # no *args or **kargs
+        self.add_bedrooms_per_room = add_bedrooms_per_room
+
+    def fit(self, X, y=None):
+        return self  # nothing else to do
+
+    def transform(self, X, y=None):
+        rooms_per_household = X[:, rooms_ix] / X[:, households_ix]
+        population_per_household = X[:, population_ix] / X[:, households_ix]
+        if self.add_bedrooms_per_room:
+            bedrooms_per_room = X[:, bedrooms_ix] / X[:, rooms_ix]
+            return np.c_[X, rooms_per_household, population_per_household,
+                         bedrooms_per_room]
+        else:
+            return np.c_[X, rooms_per_household, population_per_household]
+
+
+attr_adder = CombinedAttributesAdder(add_bedrooms_per_room=False)
+housing_extra_attribs = attr_adder.transform(housing.values)
+
+
+#pipelining several transformations
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+num_pipeline = Pipeline([
+    ('imputer', SimpleImputer(strategy = "meadian")),
+    ('attribs_adder', CombinedAttributesAdder()),
+    ('std_scaler',StandardScaler())
+])
+
+housing_num_tr = num_pipeline.fit_transform(housing_num)
+
+#so far, we have handled the categorical columns and the numerical columns separately.
+#now it can be done aat once using ColumnTransformer
+
+from sklearn.compose import ColumnTransformer
+
+num_attribs = list(housing_num)
+cat_attribs = ["ocean_proximity"]
+
+full_pipeline = ColumnTransformer(
+    ("num",num_pipeline, num_attribs),
+    ("cat", OneHotEncoder, cat_attribs)
+)
+
+housing_prepared = full_pipeline.fit_transform(housing)
